@@ -294,16 +294,20 @@
      *      zwraca przetworzone dane
      * @returns {Promise<any>}
      */
-    function openAndParse(url, parser) {
+    function openAndParse(url, parser, options = {}) {
+        const { manualTrigger = false } = options;
         return new Promise((resolve) => {
             try {
                 const w = window.open(url, '_blank', 'width=10,height=10,left=-9999,top=-9999');
                 if (!w) {
                     console.warn('[Wykres Strefy] Nie można otworzyć nowego okna – prawdopodobnie blokada pop-up.');
+                    if (manualTrigger) {
+                        alert('Przeglądarka zablokowała nowe okno z raportem. Zezwól na wyskakujące okna (pop-up) dla tej strony i spróbuj ponownie.');
+                    }
                     return resolve(null);
                 }
                 const start = Date.now();
-                const timeout = 20000;
+                const timeout = 60000;
                 const poll = setInterval(() => {
                     try {
                         const doc = w.document;
@@ -319,6 +323,9 @@
                             clearInterval(poll);
                             w.close();
                             console.warn('[Wykres Strefy] Przekroczono czas oczekiwania podczas pobierania danych.');
+                            if (manualTrigger) {
+                                alert('Nie udało się wczytać raportu w wyznaczonym czasie. Sprawdź połączenie lub otwórz raport w nowej karcie, aby ręcznie potwierdzić dostęp.');
+                            }
                             resolve(null);
                         }
                     } catch (ex) {
@@ -341,7 +348,7 @@
      * (klucz `placementsData`) z nowym okresem ważności i usuwa stare
      * dane.  Zwraca liczbę wczytanych rekordów lub 0 w przypadku problemu.
      */
-    async function refreshJTData() {
+    async function refreshJTData(manualTrigger = false) {
         try {
             const sess = getCurrentSession();
             const base = `${window.location.origin}/ords/r/webapi/news_wms_desktop/current-placements-and-replenishments`;
@@ -366,7 +373,7 @@
                     map[skuId].push({ addr, jt });
                 });
                 return map;
-            });
+            }, { manualTrigger });
             if (result && typeof result === 'object') {
                 localStorage.setItem('placementsData', JSON.stringify(result));
                 const expiry = Date.now() + 5 * 60 * 1000;
@@ -392,7 +399,7 @@
      * kolumny (Id SKU, Liczba zamówień), zapisuje w localStorage i
      * ustawia znacznik wygaśnięcia.  Zwraca liczbę rekordów lub 0.
      */
-    async function refreshWaitingData() {
+    async function refreshWaitingData(manualTrigger = false) {
         try {
             const base = `${window.location.origin}/ords/r/webapi/news_wms_desktop/waiting-for-replenishment`;
             const sess = getCurrentSession();
@@ -423,7 +430,7 @@
                     arr.push({ id: idSku, count });
                 });
                 return arr;
-            });
+            }, { manualTrigger });
             if (Array.isArray(result)) {
                 localStorage.setItem('waitingData', JSON.stringify(result));
                 const expiry = Date.now() + 5 * 60 * 1000;
@@ -447,11 +454,11 @@
      * Odświeża zarówno dane JT, jak i raport oczekujących.  Używany
      * przy automatycznym odświeżaniu oraz przez przycisk "Odśwież dane".
      */
-    async function odswiezWszystkieDane() {
+    async function odswiezWszystkieDane(manualTrigger = false) {
         // odśwież JT
-        const jtCount = await refreshJTData();
+        const jtCount = await refreshJTData(manualTrigger);
         // odśwież waiting
-        const waitCount = await refreshWaitingData();
+        const waitCount = await refreshWaitingData(manualTrigger);
         if (jtCount || waitCount) {
             console.log(`[Wykres Strefy] Odświeżono dane: JT=${jtCount}, waiting=${waitCount}`);
         }
@@ -1385,7 +1392,7 @@ async function stworzWykres() {
                 // Disable button temporarily to prevent multiple clicks
                 refreshButton.disabled = true;
                 refreshButton.textContent = '⏳ Odświeżanie…';
-                odswiezWszystkieDane().finally(() => {
+                odswiezWszystkieDane(true).finally(() => {
                     // Re-enable button and update label
                     refreshButton.disabled = false;
                     refreshButton.textContent = '🔄 Odśwież dane';
